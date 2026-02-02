@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <iostream>
 #include <stack>
+#include <sstream>
+#include <cstring>
 #include "./include/tree.h"
 using namespace std;
 
@@ -39,12 +41,23 @@ void read_data() {
     if (!fin) {
         // 如果找不到文件，尝试读取标准输入或者提示用户
         // 这里简单地回退到标准输入读取，方便测试
-        cout << "input.txt not found, reading from stdin..." << endl;
+        // cout << "input.txt not found, reading from stdin..." << endl;
         fin = stdin;
     }
     read(fin, a);
     read(fin, b);
     if (fin != stdin) fclose(fin);
+}
+
+// Helper to escape JSON strings
+string json_escape(const string& s) {
+    string ret = "";
+    for (char c : s) {
+        if (c == '"') ret += "\\\"";
+        else if (c == '\\') ret += "\\\\";
+        else ret += c;
+    }
+    return ret;
 }
 
 /**
@@ -55,8 +68,9 @@ void read_data() {
  * @param root 博弈树根节点
  * @param a 初始玩家A手牌
  * @param b 初始玩家B手牌
+ * @param jsonMode 是否为 JSON 模式
  */
-void output_solution(Node *root, int *a, int *b) {
+void output_solution(Node *root, int *a, int *b, bool jsonMode) {
     stack<Node *> st;
     st.push(root);
     
@@ -66,18 +80,20 @@ void output_solution(Node *root, int *a, int *b) {
     // 所以：奇数=A出牌，偶数=B出牌。
     
     while (!st.empty()) {
-        if (checkEmpty(a)) {
-            printf("A Wins!\n");
-            return;
+        if (!jsonMode) {
+            if (checkEmpty(a)) {
+                printf("A Wins!\n");
+                return;
+            }
+            if (checkEmpty(b)) {
+                printf("B Wins!\n");
+                return;
+            }
+            
+            // 打印当前双方手牌
+            printf("%s : ", st.size() % 2 ? "-->" : "   "); Pai::output_arr(a);
+            printf("%s : ", st.size() % 2 ? "   " : "-->"); Pai::output_arr(b);
         }
-        if (checkEmpty(b)) {
-            printf("B Wins!\n");
-            return;
-        }
-        
-        // 打印当前双方手牌
-        printf("%s : ", st.size() % 2 ? "-->" : "   "); Pai::output_arr(a);
-        printf("%s : ", st.size() % 2 ? "   " : "-->"); Pai::output_arr(b);
         
         Node *node = st.top();
         
@@ -87,10 +103,11 @@ void output_solution(Node *root, int *a, int *b) {
         int *curr_hand = st.size() % 2 ? a : b;
         int *opp_hand = st.size() % 2 ? b : a;
         
-        // 注意：checkEmpty(opp_hand) 是检查上一个出牌的人是否赢了。
-        // 如果上一个人打完牌，opp_hand 为空，这里不应该进入（前面的 checkEmpty 应该已经拦截）。
+        // 如果手牌为空，说明上一手牌打完就赢了
+        bool isWin = checkEmpty(opp_hand); // opp_hand 是刚出完牌的人
         
-        if (node->child.empty()) { 
+        // 如果游戏没结束且需要展开
+        if (!isWin && node->child.empty()) { 
              vector<Pai *> t = Pai::getLegalPai(curr_hand, node->p);
              for (auto p : t) {
                  Node *child = new Node(p, 0);
@@ -103,67 +120,92 @@ void output_solution(Node *root, int *a, int *b) {
              }
         }
 
+        if (jsonMode) {
+            // JSON Output Format
+            /*
+            {
+                "turn": "A" or "B",
+                "hand_a": [3, 3, 4, ...],
+                "hand_b": [7, ...],
+                "game_over": true/false,
+                "winner": "A" or "B" or null,
+                "options": [
+                    { "id": 0, "desc": "DAN 3", "win": false },
+                    ...
+                ]
+            }
+            */
+            cout << "{";
+            cout << "\"turn\": \"" << (st.size() % 2 ? "A" : "B") << "\",";
+            
+            // Output Hands
+            auto printHand = [](int *arr) {
+                cout << "[";
+                bool first = true;
+                for (int i = 3; i < MAX_N; i++) {
+                    for (int k = 0; k < arr[i]; k++) {
+                        if (!first) cout << ",";
+                        cout << i;
+                        first = false;
+                    }
+                }
+                cout << "]";
+            };
+            
+            cout << "\"hand_a\": "; printHand(a); cout << ",";
+            cout << "\"hand_b\": "; printHand(b); cout << ",";
+            
+            bool aWin = checkEmpty(a);
+            bool bWin = checkEmpty(b);
+            
+            if (aWin) {
+                cout << "\"game_over\": true, \"winner\": \"A\", \"options\": []";
+            } else if (bWin) {
+                cout << "\"game_over\": true, \"winner\": \"B\", \"options\": []";
+            } else {
+                cout << "\"game_over\": false, \"winner\": null, \"options\": [";
+                for (int i = 0; i < node->child.size(); i++) {
+                    if (i > 0) cout << ",";
+                    // Capture output from Pai::output() to string
+                    stringstream ss;
+                    streambuf* old_buf = cout.rdbuf(ss.rdbuf());
+                    node->child[i]->p->output();
+                    cout.rdbuf(old_buf);
+                    
+                    cout << "{\"id\": " << i << ", \"desc\": \"" << json_escape(ss.str()) << "\", \"win\": " << (node->child[i]->win ? "true" : "false") << "}";
+                }
+                cout << "]";
+            }
+            cout << "}" << endl; // End of JSON line, flush
+        }
+
         // 用户交互循环
         int no;
         do {
-            printf("[%3d] : back\n", -1);
-            for (int i = 0; i < node->child.size(); i++) {
-                // 显示选项：[序号] : [胜负状态] 牌型
-                // win=1 表示该分支对当前出牌者是有利的（即走出这一步后，对手无法必胜？）
-                // 在 tree.cc 中定义：node->win = solve(opp, curr, p)。即对手是否必胜。
-                // 如果 node->win 为 true，表示对手必胜 -> 对我不利。
-                // 如果 node->win 为 false，表示对手无法必胜 -> 对我有利。
-                // 所以显示 [0] 是好棋，[1] 是坏棋。
-                printf("[%3d] : [%d]", i, node->child[i]->win);
-                node->child[i]->p->output() << endl;
+            if (!jsonMode) {
+                printf("[%3d] : back\n", -1);
+                for (int i = 0; i < node->child.size(); i++) {
+                    printf("[%3d] : [%d]", i, node->child[i]->win);
+                    node->child[i]->p->output() << endl;
+                }
+                cout << "INPUT : ";
             }
-            cout << "INPUT : ";
+            
             if (!(cin >> no)) { // 处理输入错误或 EOF
                 return;
             }
             
             if (no == -1) break;
             if (no >= 0 && no < (int)node->child.size()) break;
-            cout << "Invalid input!" << endl;
+            if (!jsonMode) cout << "Invalid input!" << endl;
         } while(1);
         
         if (no == -1) {
             // 回退
-            st.pop();
-            // 恢复手牌：谁刚出的牌，谁收回去
-            // pop 后栈顶变了。
-            // 原栈顶是 node。node->p 是上一步打出的牌（导致进入 node）。
-            // 这一步是谁打的？是导致 node 入栈的那个人。
-            // 如果当前是 A 出牌 (size奇数)，那么 node 是上一步 B 打出的结果。
-            // 这里的逻辑稍微有点绕：
-            // node 存储的是“上家出的牌”。
-            // st.push(root) -> root->p 是 PASS。
-            // 循环开始，A 面对 PASS 出牌。
-            // A 选择 child[no]。child[no]->p 是 A 出的牌。
-            // st.push(child[no])。
-            // 下一轮，B 面对 A 出的牌。
-            
-            // 当我们 pop 时，例如从 size=2 (B出牌) 回退到 size=1 (A出牌)。
-            // 我们需要撤销 A 出的牌。
-            // A 出的牌存储在当前栈顶 (pop前的栈顶) 的 p 中。
-            // 但这里 st.pop() 已经执行了。node 变量还保留着原栈顶。
-            // node->p 就是 A 出的牌。
-            // A 是谁？ pop 后 size=1 (A)。
-            // 或者用 pop 前的 size=2 (偶数) -> 上一步是 A (奇数)。
-            // 所以：st.size() (pop后) % 2 ? a : b 是当前玩家。
-            // 上一步玩家是 opp_hand。
-            // 这里的逻辑：
-            // if (no == -1) st.pop(); node->p->back(...)
-            // node 是 pop 出来的节点。
-            // 这个节点是谁打出的？
-            // 根节点 (root) 是没人打出的 (PASS)。back 无操作。
-            // 子节点是某人打出的。
-            // 如果 pop 后 size=1。说明刚才 pop 掉的是 size=2 的节点。
-            // size=2 的节点是 A 打出的牌形成的局面。
-            // 所以应该把牌加回给 A。
-            // A 对应 size=1。
-            // 所以 back 的目标是 st.size()%2 ? a : b。
-            node->p->back(st.size() % 2 ? a : b);
+            if (st.size() > 1) { // 根节点不能回退
+                st.pop();
+                node->p->back(st.size() % 2 ? a : b);
+            }
         }
         else {
             // 前进
@@ -175,18 +217,23 @@ void output_solution(Node *root, int *a, int *b) {
     }
 }
 
-int main(){
+int main(int argc, char** argv){
+    bool jsonMode = false;
+    if (argc > 1 && strcmp(argv[1], "--json") == 0) {
+        jsonMode = true;
+    }
+
     read_data();
-    cout << "read data done ......" << endl;
+    if (!jsonMode) cout << "read data done ......" << endl;
     
     Node *rt = new Node;
-    cout << "analysis start ......" << endl;
+    if (!jsonMode) cout << "analysis start ......" << endl;
     
     // 初始分析：计算根节点的胜负状态
     getTree(rt, a, b);
     
-    cout << "analysis done  ......" << endl;
+    if (!jsonMode) cout << "analysis done  ......" << endl;
     
-    output_solution(rt, a, b);    
+    output_solution(rt, a, b, jsonMode);    
     return 0;
 }
