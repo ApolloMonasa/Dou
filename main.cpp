@@ -38,6 +38,23 @@ void output_solution(Node *root, int *a, int *b) {
         printf("%s : ", st.size() % 2 ? "-->" : "   "); Pai::output_arr(a);
         printf("%s : ", st.size() % 2 ? "   " : "-->"); Pai::output_arr(b);
         Node *node = st.top();
+        
+        // Lazy expansion: If node has no children but game is not over, generate them.
+        // This handles nodes that were skipped during initial tree building due to memoization.
+        int *curr_hand = st.size() % 2 ? a : b;
+        int *opp_hand = st.size() % 2 ? b : a;
+        
+        if (node->child.empty() && !checkEmpty(opp_hand)) { // Check opp_hand because checkEmpty checks if PREVIOUS player won
+             vector<Pai *> t = Pai::getLegalPai(curr_hand, node->p);
+             for (auto p : t) {
+                 Node *child = new Node(p, 0);
+                 p->take(curr_hand);
+                 getTree(child, opp_hand, curr_hand);
+                 p->back(curr_hand);
+                 node->child.push_back(child);
+             }
+        }
+
         int no;
         do {
             printf("[%3d] : back\n", -1);
@@ -47,7 +64,8 @@ void output_solution(Node *root, int *a, int *b) {
             }
             cout << "INPUT : ";
             cin >> no;
-            if (no >= -1 || no < (int)node->child.size()) break;
+            if (no == -1) break;
+            if (no >= 0 && no < (int)node->child.size()) break;
         } while(1);
         if (no == -1) {
             st.pop();

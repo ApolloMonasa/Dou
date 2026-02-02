@@ -227,6 +227,8 @@ bool WANGZHA::operator>(Pai *pre) {
     }
 }
 
+#include <algorithm>
+
 vector<Pai *> Pai::getLegalPai(int *arr, Pai *pai) {
     vector<Pai *> t = Pai::getPai(arr);
     vector<Pai *> ret;
@@ -234,6 +236,12 @@ vector<Pai *> Pai::getLegalPai(int *arr, Pai *pai) {
         if (x->operator>(pai)) ret.push_back(x);
         else delete x;
     }
+    
+    std::sort(ret.begin(), ret.end(), [](Pai *a, Pai *b) {
+        if (a->type != b->type) return a->type > b->type;
+        return a->operator>(b); 
+    });
+    
     return ret;
 }
 
