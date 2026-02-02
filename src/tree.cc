@@ -14,30 +14,38 @@ Node::Node() : win(false), p(new PASS()) {}
 Node::Node(Pai *p, bool win) : p(p), win(win) {}
 
 // Memoization table
-// Key: encoded state string
-// Value: true if the current player (whose turn it is to play from 'a') can win
-std::map<std::string, bool> memo;
+// Key: <handA, handB, prevMovePacked>
+// Value: true if the current player (a) can win
+std::map<std::tuple<unsigned long long, unsigned long long, unsigned int>, bool> memo;
 
-std::string hashState(int *a, int *b, Pai *p) {
-    std::string s = "";
-    // Encode hand a
-    for (int i = 3; i < MAX_N; i++) s += std::to_string(a[i]) + ",";
-    s += "|";
-    // Encode hand b
-    for (int i = 3; i < MAX_N; i++) s += std::to_string(b[i]) + ",";
-    s += "|";
-    // Encode previous move (Pai type and value)
-    if (p) {
-        s += std::to_string((int)p->type) + ",";
-        
-        if (p->type == PaiType::PASS_T) s += "PASS";
-        else {
-             s += "PASS_CHECK";
-             return "";
-        }
+// Compress 15 card counts (3-17) into a uint64_t
+// Each card count takes 3 bits (0-4)
+unsigned long long encodeHand(int *arr) {
+    unsigned long long code = 0;
+    for (int i = 3; i < MAX_N; i++) {
+        code |= ((unsigned long long)arr[i] & 0x7) << ((i - 3) * 3);
     }
-    return s;
+    return code;
 }
+
+// Compress Pai info into uint32_t
+// Type: 4 bits (0-15)
+// Value/Head: 5 bits (0-31)
+// Length: 4 bits (0-15)
+// Extra: 9 bits (type+val for attachment)
+unsigned int encodePai(Pai *p) {
+    if (!p) return 0;
+    unsigned int code = 0;
+    code |= ((unsigned int)p->type & 0xF); // 0-3
+    
+    int val = 0;
+    int len = 0;
+    int extra = 0;
+
+    // Extract details based on type
+    return p->encode();
+}
+
 
 // Helper to serialize Pai for better memoization (optional, but let's stick to PASS for now)
 
@@ -48,15 +56,16 @@ void getTree(Node *root, int *a, int *b) {
     }
     
     // Check memoization
-    std::string stateKey = "";
-    // We only memoize if the previous move was PASS (free turn)
-    // This is a safe subset of states to memoize without complex Pai serialization
-    if (root->p->type == PaiType::PASS_T) {
-        stateKey = hashState(a, b, root->p);
-        if (!stateKey.empty() && memo.count(stateKey)) {
-            root->win = memo[stateKey];
-            return;
-        }
+    // Use tuple key for O(logN) lookup with compressed data
+    unsigned long long ha = encodeHand(a);
+    unsigned long long hb = encodeHand(b);
+    unsigned int hp = encodePai(root->p);
+    
+    auto key = std::make_tuple(ha, hb, hp);
+    
+    if (memo.count(key)) {
+        root->win = memo[key];
+        return;
     }
 
     vector<Pai *> t = Pai::getLegalPai(a, root->p);
@@ -73,7 +82,5 @@ void getTree(Node *root, int *a, int *b) {
     }
     
     // Store result in memo
-    if (!stateKey.empty()) {
-        memo[stateKey] = root->win;
-    }
+    memo[key] = root->win;
 }

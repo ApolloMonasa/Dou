@@ -31,9 +31,9 @@ public:
     virtual ~Pai() = default;
     virtual void take(int *) = 0;
     virtual void back(int *) = 0;
+    virtual unsigned int encode() { return 0; }
     PaiType type;
 };
-
 
 class PASS : public Pai {
 public:
@@ -43,6 +43,7 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override { return (unsigned int)PaiType::PASS_T; }
 };
 
 class DAN : public Pai {
@@ -55,6 +56,10 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override { 
+        // Type: 4 bits, Val: 5 bits
+        return ((unsigned int)PaiType::DAN_T) | (x << 4);
+    }
 };
 
 class DUIZI : public Pai {
@@ -67,6 +72,9 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override {
+        return ((unsigned int)PaiType::DUIZI_T) | (x << 4);
+    }
 };
 
 class SHUNZI : public Pai {
@@ -79,6 +87,10 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override {
+        // Type: 4 bits, Head: 5 bits, Len: 4 bits
+        return ((unsigned int)PaiType::SHUNZI_T) | (head << 4) | (length << 9);
+    }
 };
 
 class SANDAI : public Pai {
@@ -92,6 +104,11 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override {
+        // Type: 4 bits, X: 5 bits, Dai: 12 bits (Type 4 + Val 8)
+        unsigned int dai_code = dai->encode(); // Recursively encode attachment
+        return ((unsigned int)PaiType::SANDAI_T) | (x << 4) | (dai_code << 9);
+    }
 };
 
 class ZHADAN : public Pai {
@@ -104,6 +121,9 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override {
+        return ((unsigned int)PaiType::ZHADAN_T) | (x << 4);
+    }
 };
 
 class WANGZHA : public Pai {
@@ -114,6 +134,9 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override {
+        return ((unsigned int)PaiType::WANGZHA_T);
+    }
 };
 
 class LIANDUI : public Pai {
@@ -126,5 +149,8 @@ public:
     bool operator>(Pai *pre) override;
     void take(int *) override;
     void back(int *) override;
+    unsigned int encode() override {
+        return ((unsigned int)PaiType::LIANDUI_T) | (head << 4) | (length << 9);
+    }
 };
 
