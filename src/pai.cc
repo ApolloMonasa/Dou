@@ -108,6 +108,12 @@ vector<Pai *> Pai::getPai(int *arr) {
     t = LIANDUI::get(arr);
     ret.insert(ret.end(), t.begin(), t.end());
 
+    t = FEIJI::get(arr);
+    ret.insert(ret.end(), t.begin(), t.end());
+
+    t = SIDAIER::get(arr);
+    ret.insert(ret.end(), t.begin(), t.end());
+
     t = SANDAI::get(arr);
     ret.insert(ret.end(), t.begin(), t.end());
 
@@ -346,4 +352,216 @@ void LIANDUI::take(int *arr) {
 }
 void LIANDUI::back(int *arr) {
     for (int i = this->head, I = this->head + this->length; i < I; i++) arr[i] += 2;
+}
+
+FEIJI::FEIJI(int head, int length, int wingType, const vector<int>& wings) 
+    : Pai(PaiType::FEIJI_T), head(head), length(length), wingType(wingType), wings(wings) {}
+
+// Move DFS struct outside of function or make it a helper function
+// Since local classes cannot have static member functions in C++11 (it's allowed but scope is tricky)
+// Let's just make a recursive helper function outside.
+
+static void findWingsRecursive(int startVal, int countNeeded, int type, int *arr, int h, int len, 
+                vector<int>& current, vector<vector<int>>& out) {
+    if (countNeeded == 0) {
+        out.push_back(current);
+        return;
+    }
+    if (startVal > 17) return;
+    
+    // Try taking k instances of startVal
+    int avail = arr[startVal];
+    if (startVal >= h && startVal < h + len) avail -= 3;
+    int unit = (type == 2 ? 2 : 1);
+    
+    if (avail < 0) avail = 0; // Safety
+    int maxTake = avail / unit;
+    
+    // Iterate k from 0 to maxTake
+    // But we need exactly countNeeded.
+    // Optimization: Don't take more than countNeeded
+    for (int k = 0; k <= maxTake && k <= countNeeded; k++) {
+        // Add k instances
+        for (int x = 0; x < k; x++) current.push_back(startVal);
+        
+        findWingsRecursive(startVal + 1, countNeeded - k, type, arr, h, len, current, out);
+        
+        // Backtrack
+        for (int x = 0; x < k; x++) current.pop_back();
+    }
+}
+
+vector<Pai *> FEIJI::get(int *arr) {
+    vector<Pai *> ret;
+    
+    // Body length: at least 2
+    // Max length: 12 (3 to A is 12 cards)
+    for (int len = 2; len <= 6; len++) { // Max 6*3=18 cards
+        for (int h = 3, H = 14 - len + 1; h <= H; h++) {
+            // Check body validity
+            bool validBody = true;
+            for (int k = h; k < h + len; k++) {
+                if (arr[k] < 3) {
+                    validBody = false;
+                    break;
+                }
+            }
+            if (!validBody) continue;
+            
+            // 1. No wings
+            ret.push_back(new FEIJI(h, len, 0, {}));
+            
+            // 2. Wings: Singles (type 1)
+            vector<vector<int>> wingsList;
+            vector<int> current;
+            findWingsRecursive(3, len, 1, arr, h, len, current, wingsList);
+            
+            for (auto& w : wingsList) {
+                ret.push_back(new FEIJI(h, len, 1, w));
+            }
+            
+            // 3. Wings: Pairs (type 2)
+            vector<vector<int>> wingsListDui;
+            vector<int> currentDui;
+            findWingsRecursive(3, len, 2, arr, h, len, currentDui, wingsListDui);
+            
+            for (auto& w : wingsListDui) {
+                ret.push_back(new FEIJI(h, len, 2, w));
+            }
+        }
+    }
+    return ret;
+}
+
+ostream& FEIJI::output() {
+    cout << "FEIJI " << Pai::getName(head) << "-" << length;
+    if (wingType == 1) {
+        cout << " WITH DAN";
+        for (int w : wings) cout << " " << Pai::getName(w);
+    } else if (wingType == 2) {
+        cout << " WITH DUI";
+        for (int w : wings) cout << " " << Pai::getName(w);
+    }
+    return cout;
+}
+
+bool FEIJI::operator>(Pai *pre) {
+    switch (pre->type) {
+        case PaiType::PASS_T: return true;
+        case PaiType::FEIJI_T: {
+            FEIJI *pre_ = dynamic_cast<FEIJI *>(pre);
+            if (this->length != pre_->length) return false;
+            if (this->wingType != pre_->wingType) return false; // Strict type match
+            return this->head > pre_->head;
+        }
+        default: return false;
+    }
+}
+
+void FEIJI::take(int *arr) {
+    // Body
+    for (int i = head; i < head + length; i++) arr[i] -= 3;
+    // Wings
+    int unit = (wingType == 2 ? 2 : (wingType == 1 ? 1 : 0));
+    if (unit > 0) {
+        for (int w : wings) arr[w] -= unit;
+    }
+}
+
+void FEIJI::back(int *arr) {
+    // Body
+    for (int i = head; i < head + length; i++) arr[i] += 3;
+    // Wings
+    int unit = (wingType == 2 ? 2 : (wingType == 1 ? 1 : 0));
+    if (unit > 0) {
+        for (int w : wings) arr[w] += unit;
+    }
+}
+
+SIDAIER::SIDAIER(int x, int d1, int d2, bool isDui) : Pai(PaiType::SIDAIER_T), x(x), d1(d1), d2(d2), isDui(isDui) {}
+
+vector<Pai *> SIDAIER::get(int *arr) {
+    vector<Pai *> ret;
+    for (int i = 3; i <= 15; i++) { // Main card: 3 to 2. No Jokers for main card of 4-of-a-kind typically
+        if (arr[i] < 4) continue;
+        
+        // With 2 single cards
+        for (int j = 3; j <= 17; j++) {
+            // Cannot take Joker as attachment according to user requirement
+            // "Note: cannot take Big/Small Joker"
+            if (j >= 16) continue; 
+            
+            if (j == i) continue;
+            if (arr[j] < 1) continue;
+            
+            for (int k = j; k <= 17; k++) {
+                if (k >= 16) continue; // No Jokers
+                if (k == i) continue;
+                if (arr[k] < 1) continue;
+                if (j == k && arr[k] < 2) continue;
+                
+                ret.push_back(new SIDAIER(i, j, k, false));
+            }
+        }
+        
+        // With 2 pairs
+        for (int j = 3; j <= 17; j++) {
+            if (j >= 16) continue; // No Jokers
+            if (j == i) continue;
+            if (arr[j] < 2) continue;
+            
+            for (int k = j; k <= 17; k++) { // Pairs can be same? Typically not. "Two pairs".
+                // If pairs are same, it's 4 cards. 4帶4? 
+                // Usually "Two Pairs" implies distinct pairs.
+                // Let's assume distinct pairs for now to be safe, or allow same if arr has 4.
+                // Let's start k from j to allow same pairs if available (e.g. 4444 + 33 + 33).
+                if (k >= 16) continue; // No Jokers
+                if (k == i) continue;
+                if (arr[k] < 2) continue;
+                if (j == k && arr[k] < 4) continue; 
+                
+                ret.push_back(new SIDAIER(i, j, k, true));
+            }
+        }
+    }
+    return ret;
+}
+
+ostream& SIDAIER::output() {
+    cout << "SIDAI " << Pai::getName(x) << " WITH " << (isDui ? "DUI " : "DAN ") << Pai::getName(d1) << " " << Pai::getName(d2);
+    return cout;
+}
+
+bool SIDAIER::operator>(Pai *pre) {
+    switch (pre->type) {
+        case PaiType::PASS_T: return true;
+        case PaiType::SIDAIER_T: {
+            SIDAIER *pre_ = dynamic_cast<SIDAIER *>(pre);
+            if (this->isDui != pre_->isDui) return false;
+            return this->x > pre_->x;
+        }
+        default: return false;
+    }
+}
+
+void SIDAIER::take(int *arr) {
+    arr[x] -= 4;
+    if (isDui) {
+        arr[d1] -= 2;
+        arr[d2] -= 2;
+    } else {
+        arr[d1]--;
+        arr[d2]--;
+    }
+}
+
+void SIDAIER::back(int *arr) {
+    arr[x] += 4;
+    if (isDui) {
+        arr[d1] += 2;
+        arr[d2] += 2;
+    } else {
+        arr[d1]++;
+        arr[d2]++;
+    }
 }
